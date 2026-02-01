@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>icon/tmp.svg</file>
+    </qresource>
+    <qresource prefix="/images">
+        <file>images/logo.png</file>
+    </qresource>
+    <qresource prefix="/qss">
+        <file>qss/light.qss</file>
+        <file>qss/dark.qss</file>
+    </qresource>
+</RCC>

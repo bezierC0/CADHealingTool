@@ -1,0 +1,277 @@
+cmake_minimum_required(VERSION 3.19)
+project(CADHealingTool VERSION 0.0.1 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+
+set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resource")
+
+#########
+# Version info
+#########
+if(WIN32)
+    configure_file(
+        ${RESOURCE_DIR}/version.rc.in
+        ${CMAKE_BINARY_DIR}/version.rc
+        @ONLY
+    )
+elseif(APPLE)
+    # macOS Info.plist configuration
+    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.company.CADHealingTool")
+    set(MACOSX_BUNDLE_BUNDLE_NAME "CADHealingTool")
+    set(MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
+    set(MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    set(MACOSX_BUNDLE_ICON_FILE "icon.icns")
+    set(MACOSX_BUNDLE_COPYRIGHT "Copyright (C) 2025")
+endif()
+
+#########
+# Opencascade
+#########
+
+# WIN32
+# Can't use find_package(OpenCASCADE) as OpenCASCADEConfig.cmake is broken for Windows platform
+# See https://dev.opencascade.org/content/3rdparty-hard-coded-paths-when-building-against-opencascade
+set(OpenCASCADE_DIR "" CACHE PATH "OpenCASCADE Options: Path to OpenCASCADE directory")
+set(OpenCASCADE_3RDPARTY_DIR "" CACHE PATH "OpenCASCADE Options: Path to OpenCASCADE 3RDPARTY directory")
+
+include(${OpenCASCADE_DIR}/CMake/OpenCASCADEConfig.cmake)
+
+set(OpenCASCADE_VERSION ${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION})
+
+message(STATUS "OpenCascade version ${OpenCASCADE_VERSION}")
+message(STATUS "OpenCascade binary ${OpenCASCADE_BINARY_DIR}")
+message(STATUS "OpenCascade library ${OpenCASCADE_LIBRARY_DIR}")
+message(STATUS "OpenCascade include ${OpenCASCADE_INCLUDE_DIR}")
+
+# Define the list of OpenCASCADE toolkits to link against based on your project's needs
+set(
+    OpenCASCADE_TOOLKITS
+    # FoundationClasses
+    TKernel TKMath
+    # ModelingData
+    TKG2d TKG3d TKGeomBase TKBRep
+    # ModelingAlgorithms
+    TKBO TKBool TKGeomAlgo TKHLR TKMesh TKPrim TKShHealing TKTopAlgo
+    TKOffset TKFillet
+    # Visualization
+    TKMeshVS TKOpenGl TKService TKV3d
+    # ApplicationFramework
+    TKBin TKBinL TKBinXCAF TKCAF TKCDF TKLCAF TKVCAF TKXml TKXmlL
+    # DataExchange
+    TKXCAF TKXmlXCAF TKXSBase
+)
+
+# Add version-specific toolkits (this is an example, adjust as needed for your OCCT version)
+if(OpenCASCADE_VERSION VERSION_GREATER_EQUAL 7.8.0)
+    list(APPEND OpenCASCADE_TOOLKITS TKDE TKDEIGES TKDESTEP TKDESTL TKDEVRML)
+else()
+    list(APPEND OpenCASCADE_TOOLKITS TKIGES TKXDEIGES)
+    list(APPEND OpenCASCADE_TOOLKITS TKSTEP TKSTEP209 TKSTEPAttr TKSTEPBase TKXDESTEP)
+    list(APPEND OpenCASCADE_TOOLKITS TKSTL)
+    list(APPEND OpenCASCADE_TOOLKITS TKVRML)
+    if(OpenCASCADE_VERSION VERSION_GREATER_EQUAL 7.7.0)
+        list(APPEND OpenCASCADE_TOOLKITS  TKXDE)
+    endif()
+endif()
+
+# Build the final list of library files to link
+set(OCCT_LIBRARIES_TO_LINK "")
+foreach(OccTK ${OpenCASCADE_TOOLKITS})
+    list(APPEND OCCT_LIBRARIES_TO_LINK "${OccTK}.lib")
+endforeach()
+
+list(APPEND OCCT_LIBRARIES_TO_LINK "OpenGL32.lib")
+
+# Find core OpenCASCADE runtime DLLs from the binary directory
+file(GLOB OpenCASCADE_TOOLKITS_DLLS "${OpenCASCADE_BINARY_DIR}/*.dll")
+
+# 3RDPARTY
+file(GLOB FREETYPE_DIRS         "${OpenCASCADE_3RDPARTY_DIR}/freetype*")
+file(GLOB TCLTK_DIRS            "${OpenCASCADE_3RDPARTY_DIR}/tcltk*")
+file(GLOB FREEIMAGE_DIRS        "${OpenCASCADE_3RDPARTY_DIR}/freeimage*")
+file(GLOB TBB_DIRS              "${OpenCASCADE_3RDPARTY_DIR}/tbb*")
+file(GLOB JEMALLOC_DIRS         "${OpenCASCADE_3RDPARTY_DIR}/jemalloc*")
+file(GLOB FFMPEG_DIRS           "${OpenCASCADE_3RDPARTY_DIR}/ffmpeg*")
+
+set(3RDPARTY_MODULE_DIRS
+    ${FREETYPE_DIRS}
+    ${TCLTK_DIRS}
+    ${FREEIMAGE_DIRS}
+    ${TBB_DIRS}
+    ${JEMALLOC_DIRS}
+    ${FFMPEG_DIRS}
+)
+set(OpenCASCADE_3RDPARTY_DLLS "")
+foreach(3RDPARTY_MODULE_DIR ${3RDPARTY_MODULE_DIRS})
+    set(3RDPARTY_MODULE_BIN_DIR "${3RDPARTY_MODULE_DIR}/bin")
+    if(EXISTS "${3RDPARTY_MODULE_BIN_DIR}")
+        # Find all DLLs in the bin directory
+        file(GLOB DLLS_IN_BIN "${3RDPARTY_MODULE_BIN_DIR}/*.dll")
+        # Add found DLLs to the list
+        list(APPEND OpenCASCADE_3RDPARTY_DLLS ${DLLS_IN_BIN})
+    endif()
+endforeach()
+
+file(GLOB 3RDPARTY_MODULE_OPENVR_DIR "${OpenCASCADE_3RDPARTY_DIR}/openvr*")
+file(GLOB OPENVR_DLLS_IN_BIN "${3RDPARTY_MODULE_OPENVR_DIR}/bin/win64/*.dll")
+list(APPEND OpenCASCADE_3RDPARTY_DLLS ${OPENVR_DLLS_IN_BIN})
+
+message(STATUS "Found DLLs:")
+foreach(dll ${OpenCASCADE_3RDPARTY_DLLS})
+    message(STATUS "  ${dll}")
+endforeach()
+
+# OpenCASCADE (Manual Configuration)
+if(OpenCASCADE_INCLUDE_DIR)
+    include_directories(${OpenCASCADE_INCLUDE_DIR})
+else()
+    message(WARNING "OpenCASCADE_DIR is not set. Please specify the OpenCASCADE include path.")
+endif()
+
+if(OpenCASCADE_LIBRARY_DIR)
+    link_directories(${OpenCASCADE_LIBRARY_DIR})
+else()
+    message(WARNING "OpenCASCADE_DIR is not set. Please specify the OpenCASCADE library path.")
+endif()
+
+if(NOT OCCT_LIBRARIES_TO_LINK)
+    message(FATAL_ERROR "Failed to build the list of OpenCASCADE libraries. Check your configuration.")
+endif()
+
+if(NOT OpenCASCADE_3RDPARTY_DLLS)
+    message(FATAL_ERROR "Failed to find the list of OpenCASCADE 3rdParty. Check your configuration.")
+endif()
+
+#########
+# Qt
+#########
+find_package(Qt5 REQUIRED COMPONENTS 
+    Core Widgets LinguistTools
+)
+# Output Qt info
+if(Qt5_FOUND)
+    message(STATUS "Qt5_DIR: ${Qt5_DIR}")
+    message(STATUS "Qt5_VERSION: ${Qt5_VERSION}")
+else()
+    message(FATAL_ERROR "Qt5_DIR not found or path does not exist. ")
+endif()
+
+#########
+# resource
+#########
+set(TS_FILES)
+file(
+    GLOB TS_FILES
+    RELATIVE ${CMAKE_SOURCE_DIR}  
+    ${RESOURCE_DIR}/i18n/*.ts
+)
+
+#########
+# Core Library
+#########
+add_library(CADCore SHARED
+    src/core/CadProcessor.cpp
+    src/core/CadProcessor.h
+    src/core/CADCore_global.h
+)
+
+target_include_directories(CADCore PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+)
+
+target_link_libraries(CADCore PRIVATE ${OCCT_LIBRARIES_TO_LINK} ${MANUAL_3RDPARTY_LIBRARIES})
+target_compile_definitions(CADCore PRIVATE CADCORE_LIBRARY)
+
+#########
+# sources (UI)
+#########
+set(SOURCES)
+file(
+    GLOB SOURCES
+    src/*.cpp
+    # ui
+    src/*.ui
+    # external
+    external/SARibbon/SARibbon.cpp
+)
+
+#########
+# headers (UI)
+#########
+set(HEADERS)
+file(
+    GLOB HEADERS
+    src/*.h
+)
+
+#########
+# qm
+#########
+set(QM_FILES)
+
+configure_file(${RESOURCE_DIR}/translations.qrc ${CMAKE_BINARY_DIR} COPYONLY)
+option(UPDATE_TRANSLATIONS "Creating/updating translation files from source" OFF)
+if(UPDATE_TRANSLATIONS)
+    message(STATUS "Creating/updating translation files from source")
+    qt5_create_translation(QM_FILES ${CMAKE_CURRENT_SOURCE_DIR} ${TS_FILES})
+else()
+    message(STATUS "Compiling existing translation files")
+    qt5_add_translation(QM_FILES ${TS_FILES})
+endif()
+
+add_executable(${PROJECT_NAME} 
+    ${SOURCES} 
+    ${HEADERS} 
+    ${RESOURCE_DIR}/resource.qrc 
+    ${CMAKE_BINARY_DIR}/translations.qrc
+    ${QM_FILES}
+)
+
+if(WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/version.rc)
+endif()
+
+#########
+# copy dll
+#########
+option(IS_COPY_DLLS "Copy OpenCASCADE and 3rd-party DLLs" ON)
+if(IS_COPY_DLLS)
+    if(WIN32)
+        set(ALL_DLLS_TO_COPY ${OpenCASCADE_TOOLKITS_DLLS} ${OpenCASCADE_3RDPARTY_DLLS})
+        
+        if(ALL_DLLS_TO_COPY)
+            # Add a post-build command to copy all necessary DLLs to the output directory
+            add_custom_command(
+                TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${ALL_DLLS_TO_COPY}
+                        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        $<TARGET_FILE:CADCore>
+                        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+                COMMAND_EXPAND_LISTS
+                COMMENT "Copying OpenCASCADE types and core DLLs"
+            )
+        endif()
+    endif()
+endif()
+
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE QT_OPENGL_DESKTOP)
+endif()
+
+target_include_directories(${PROJECT_NAME} 
+    PRIVATE 
+        ${MANUAL_OCCT_INCLUDE_DIR}
+        external/SARibbon
+)
+target_link_libraries(${PROJECT_NAME} 
+    PRIVATE 
+        CADCore
+        Qt5::Widgets Qt5::Core
+)
